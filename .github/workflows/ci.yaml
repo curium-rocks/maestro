@@ -1,4 +1,4 @@
-name: Node TS Starter CI
+name: Maestro CI
 on:
   push:
   pull_request:
@@ -18,11 +18,11 @@ jobs:
     - run: npm audit --production
     - run: npm run build
     - run: npm run test
-    #- name: qube scan
-      #run: npm run sonarscan
-      #env:
-        #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        #SONARQUBE_KEY: ${{ secrets.SONARQUBE_KEY }}
+    - name: qube scan
+      run: npm run sonarscan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONARQUBE_KEY: ${{ secrets.SONARQUBE_KEY }}
     - run: npm run doc
     - uses: actions/upload-artifact@v2
       with:
