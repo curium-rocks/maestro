@@ -4,6 +4,7 @@
   "labels": ["dependencies"],
   "packageRules": [
     {
+      "matchPaths": ["+(package.json)"],
       "automerge": true
     }
   ]
