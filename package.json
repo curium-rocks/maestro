@@ -62,7 +62,7 @@
   },
   "homepage": "https://github.com/curium-rocks/maestro#readme",
   "dependencies": {
-    "@curium.rocks/data-emitter-base": "^0.1.1-alpha.27",
+    "@curium.rocks/data-emitter-base": "^0.1.1-alpha.30",
     "config": "^3.3.6"
   }
 }
