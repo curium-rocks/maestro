@@ -1,14 +1,45 @@
 import { describe, it} from 'mocha';
 import { expect } from 'chai';
+import {IMaestroConfig, IMeastroOptions, Maestro} from '../src/index';
+
+const DEFAULT_CONFIG : IMaestroConfig = {
+    id: 'test-id',
+    name: 'test-name',
+    description: 'test-description',
+    formatSettings: {
+        encrypted: false,
+        type: 'N/A'
+    },
+    connections: [],
+    factories: {
+        emitter: [],
+        chronicler: []
+    },
+    emitters: [],
+    chroniclers: []
+}
+
+const DEFAULT_OPTIONS: IMeastroOptions = {
+    config: DEFAULT_CONFIG,
+    loadHandler: () => {
+        return Promise.resolve(DEFAULT_CONFIG);
+    }
+}
 
 describe( 'Maestro', function() {
     describe( 'load()', function() {
-        it( 'Should restore state from a persisted store', function() {
+        it( 'Should restore state from a json file', async function() {
+            expect(false).to.be.true;
+        });
+        it( 'Should restore from a handler', async function() {
             expect(false).to.be.true;
         });
     });
     describe( 'save()', function() {
-        it( 'Should save state to a persisted store', function() {
+        it( 'Should save state to a json file', function() {
+            expect(false).to.be.true;
+        });
+        it ('Should save state to a handler', function() {
             expect(false).to.be.true;
         });
     });

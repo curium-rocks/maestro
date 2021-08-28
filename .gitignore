@@ -5,3 +5,5 @@ coverage
 .idea
 docs
 .DS_Store
+.vscode
+*.log
