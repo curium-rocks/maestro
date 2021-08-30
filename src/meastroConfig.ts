@@ -8,12 +8,12 @@ export interface IConnection {
 
 export interface IEmitterConfig {
     config: string | IEmitterDescription;
-    formatSettings: IFormatSettings;
+    formatSettings?: IFormatSettings;
 }
 
 export interface IChroniclerConfig {
     config: string | IChroniclerDescription;
-    formatSettings: IFormatSettings;
+    formatSettings?: IFormatSettings;
 }
 export interface IFactoryConfig {
     packageName: string;

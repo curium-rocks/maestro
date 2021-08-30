@@ -1,7 +1,9 @@
-import {IChronicler, IDataEmitter, IMaestro, IService, LoggerFacade, LogLevel, IDisposableAsync, isDisposableAsync, isDisposable, isService, ProviderSingleton, IDisposable, IClassifier, IChroniclerFactory, IEmitterFactory} from '@curium.rocks/data-emitter-base';
+import {IChronicler, IDataEmitter, IMaestro, IService, LoggerFacade, LogLevel, IDisposableAsync, isDisposableAsync, isDisposable, isService, ProviderSingleton, IDisposable, IClassifier, IChroniclerFactory, IEmitterFactory, hasMethod, IChroniclerDescription, IEmitterDescription} from '@curium.rocks/data-emitter-base';
 import { IChroniclerConfig, IEmitterConfig, IFactoryMap, IMaestroConfig } from './meastroConfig';
+import path from 'path';
 import fs from 'fs';
 import fsProm from 'fs/promises';
+import crypto from 'crypto';
 
 /**
  * 
@@ -26,6 +28,7 @@ export interface IMaestroLoadHandler {
 
 export interface IMeastroOptions {
     logger?: LoggerFacade,
+    disposeOnRemove?: boolean;
     config: IMaestroConfig | string,
     loadHandler?: IMaestroLoadHandler,
     saveHandler?: IMaestroSaveHandler
@@ -40,9 +43,11 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     private readonly _logger?: LoggerFacade;
     private readonly _disposables: Set<IDisposable|IDisposableAsync> = new Set<IDisposable|IDisposableAsync>();
     private readonly _configFilePath?: string;
-    private readonly _config: IMaestroConfig;
+    private _config: IMaestroConfig;
     private readonly _saveHandler? : IMaestroSaveHandler;
-    private readonly _loadHandler? : IMaestroLoadHandler; 
+    private readonly _loadHandler? : IMaestroLoadHandler;
+    private _configApplied = false;
+    private readonly _disposeOnRemove: boolean;
 
     /**
      * get the id of the meastro
@@ -88,6 +93,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     constructor(options: IMeastroOptions) {
         this._logger = options.logger;
         this.log(LogLevel.DEBUG, "creating maestro");
+        this._disposeOnRemove = options.disposeOnRemove || true;
         
         if(typeof options.config === 'string' && options.saveHandler == null) {
             this.log(LogLevel.WARN, 'A maestro configuration object was provided instead of a file path but a save handler was not provided. ' + 
@@ -100,25 +106,39 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
         if(typeof options.config === 'string') {
             this._configFilePath = options.config;
-            const jsonString = fs.readFileSync(options.config, {
-                encoding: 'utf-8'
-            });
-    
-            this._config = JSON.parse(jsonString);
+            try {
+                const jsonString = fs.readFileSync(options.config, {
+                    encoding: 'utf-8'
+                });
+                this._config = JSON.parse(jsonString);
+            } catch (erro) {
+                this.log(LogLevel.ERROR, "An error occurred while loading configuration: " + erro);
+                const id = crypto.randomUUID();
+                this._config = {
+                    id: id,
+                    name: id + '-default-name',
+                    description: id + '-default-desc',
+                    formatSettings: {
+                        encrypted: false,
+                        type: 'N/A'
+                    },
+                    connections: [],
+                    chroniclers: [],
+                    emitters: [],
+                    factories:  {
+                        emitter: [],
+                        chronicler: []
+                    }
+                }
+            }
         } else {
             this._configFilePath = undefined;
             if(options.loadHandler) this._loadHandler = options.loadHandler;
             if(options.saveHandler) this._saveHandler = options.saveHandler;
             this._config = options.config;
         }
-        
-        this.load().then(()=>{
-            // save back on startup to enforce encryption and other formatting properties on seed case
-            return this.save();
-        }).catch((err)=>{
-            this.log(LogLevel.WARN, "An error occurred while loading configuration, another load will be required: " + err);
-        });
     }
+
 
     /**
      * 
@@ -156,6 +176,9 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      * @return {Promise<void>} 
      */
     private async serviceCallEntities(start: boolean) : Promise<void> {
+        if(!this._configApplied) {
+            await this.load();
+        }
         const promises = Array.from(this.emitters as Iterable<unknown>).concat(Array.from(this.chroniclers as Iterable<unknown>))
             .map((obj:unknown) => {
             if(isService(obj)) {
@@ -186,11 +209,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      * @return {Promise<void>}
      */
     async disposeAsync(): Promise<void> {
-        await Promise.all(Array.from(this.emitters as Iterable<unknown>).concat(Array.from(this.chroniclers as Iterable<unknown>))
-            .map(this.cleanUpIfDisposable));
-        this._chroniclers.clear();
-        this._emitters.clear();
-        this._disposables.clear();
+        await this.cleanUpResources();
     }
 
 
@@ -274,10 +293,49 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         if(isDisposableAsync(obj)) {
             return (obj as IDisposableAsync).disposeAsync();
         } else if(isDisposable(obj)) {
+            this.log(LogLevel.DEBUG, "disposing object");
             return Promise.resolve((obj as IDisposable).dispose());
         } else {
             return Promise.resolve();
         }
+    }
+
+    /**
+     * Call stop on an object if available
+     * @param {unknown} obj 
+     * @return {Promise<void>} 
+     */
+    private stopIfStoppable(obj: unknown) : Promise<void> {
+        if(hasMethod(obj, 'stop')) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (obj as any).stop();    
+        } else if( hasMethod(obj, 'stopPolling')) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (obj as any).stopPolling();
+        }
+        return Promise.resolve();
+    }
+
+    /**
+     * @return {Promise<void>}
+     */
+    private async cleanUpResources() : Promise<void>  {
+        this.log(LogLevel.DEBUG, `Cleaning up resources, current counts, emitters = ${this._emitters.size}, chroniclers = ${this._chroniclers.size}, connections = ${this._disposables.size}`);
+        const resources: unknown[] = [];
+        this._emitters.forEach((d) => resources.push(d));
+        this._chroniclers.forEach((c) => resources.push(c));
+        this._disposables.forEach((d) => resources.push(d));
+
+        const promises = resources.map((d) => {
+            return this.cleanUpIfDisposable(d);
+        });
+        const unifiedPromise = Promise.all(promises);
+        await unifiedPromise;
+
+        this._emitters.clear();
+        this._chroniclers.clear();
+        this._disposables.clear();
+        this.log(LogLevel.DEBUG, `Cleaned up ${resources.length} resources`);
     }
 
 
@@ -289,11 +347,6 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         // clear out the emitters
         // clear out the chroniclers
         // clean up
-        await Promise.all(Array.
-            from(this._disposables, this._emitters.entries, this._chroniclers.entries).map(this.cleanUpIfDisposable));
-        this._disposables.clear();
-        this._emitters.clear();
-        this._chroniclers.clear();
 
         // load factories
         this.registerFactories(maestroConfig.factories);
@@ -303,12 +356,15 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
         // create chroniclers
         await this.createChroniclers(maestroConfig.chroniclers);
+        this._config = maestroConfig;
     }
 
     /**
      * 
      */
     async load(): Promise<void> {
+        await this.cleanUpResources();
+
         // set the classifier information
         let maestroConfig: IMaestroConfig; 
         if(this._configFilePath) {
@@ -321,7 +377,8 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         } else {
             return Promise.reject(new Error("Config file path or load handler not provided!"));
         }
-        await this.applyConfiguration(maestroConfig)
+        await this.applyConfiguration(maestroConfig);
+        this._configApplied = true;
     }
 
     /**
@@ -358,14 +415,15 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     private async createEmitters(emitters: Array<IEmitterConfig>) : Promise<void> {
         this.log(LogLevel.INFO, "Loading emitters");
         let emitterCount = 0;
-        await Promise.all(emitters.map(ec => {
+        const emitterArray: IDataEmitter[] = await Promise.all(emitters.map(ec => {
             emitterCount++;
             if(typeof ec.config === "string") {
-                return ProviderSingleton.getInstance().recreateEmitter(ec.config, ec.formatSettings)
+                return ProviderSingleton.getInstance().recreateEmitter(ec.config, ec.formatSettings || this._config.formatSettings)
             } else {
                 return ProviderSingleton.getInstance().buildEmitter(ec.config);
             }
         }));
+        emitterArray.forEach((e) => this.addEmitter(e));
         this.log(LogLevel.INFO, `Loaded ${emitterCount} emitters`);
     }
 
@@ -376,13 +434,14 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     private async createChroniclers(chroniclers: Array<IChroniclerConfig>) : Promise<void> {
         this.log(LogLevel.INFO, "Loading chroniclers");
         let chroniclerCount = 0;
-        await Promise.all(chroniclers.map(cc => {
+        const chroniclerArray: IChronicler[] = await Promise.all(chroniclers.map(cc => {
             chroniclerCount++;
             if(typeof cc.config === "string") {
                 return Promise.reject(new Error("Encryption not supported yet!"));
             }
             return ProviderSingleton.getInstance().buildChronicler(cc.config);
         }));
+        chroniclerArray.forEach((c) => this.addChronicler(c));
         this.log(LogLevel.INFO, `Loaded ${chroniclerCount} chroniclers`);    
     }
 
@@ -404,7 +463,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
             }
         }))
 
-        const savedConfig: IMaestroConfig = {
+        return {
             factories: this._config.factories,
             emitters: emitterConfigurations,
             connections: [],
@@ -414,16 +473,21 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
             name: this.name,
             description: this.description
         }
-        return savedConfig;
     }
 
     /**
      * 
      */
-    async save(): Promise<void> {        
+    async save(): Promise<void> {     
         if(this._configFilePath) {
             const jsonString: string = JSON.stringify(await this.buildConfigObj());
-            await fsProm.writeFile(this._configFilePath, jsonString);
+            await fsProm.mkdir(path.parse(this._configFilePath).dir, {
+                recursive: true
+            });
+            await fsProm.writeFile(this._configFilePath, jsonString, {
+                encoding: 'utf-8',
+                flag: 'w+'
+            });
         } else if(this._saveHandler) {
             await this._saveHandler(await this.buildConfigObj());
         } else {
@@ -433,49 +497,76 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
     /**
      * 
-     * @param {IDataEmitter}  emitter 
+     * @param {IDataEmitter|IEmitterDescription}  emitter
+     * @return {Promise<void>} 
      */
-    addEmitter(emitter: IDataEmitter): void {
+    async addEmitter(emitter: IDataEmitter|IEmitterDescription): Promise<void> {
         const key = emitter.id.toLowerCase();
+        const isEmitter = hasMethod(emitter, 'dispose');
+
+        this.log(LogLevel.INFO, `Adding emitter ${key}`);
         if(this._emitters.has(key)){
             // TODO: think about if we should be responsible for cleaning up of an emitter in this case
             this.log(LogLevel.WARN, `Replacing ${key} in emitter map `);
         }
-        this._emitters.set(key, emitter);
-    }
-    
-    /**
-     * 
-     * @param {IDataEmitter} emitter 
-     */
-    removeEmitter(emitter: IDataEmitter): void {
-        const key = emitter.id.toLowerCase();
-        if(this._emitters.has(key))
-            this._emitters.delete(key);
+        this._emitters.set(key, isEmitter ? emitter as IDataEmitter : await ProviderSingleton.getInstance().buildEmitter(emitter as IEmitterDescription));
     }
 
     /**
      * 
-     * @param {IChronicler} chronicler 
+     * @param {IClassifier|string} obj 
+     * @return {string}
      */
-    addChronicler(chronicler: IChronicler): void {
+    private getKey(obj: IClassifier|string) : string {
+        return typeof obj == 'string' ? obj.toLowerCase() : obj.id.toLowerCase();
+    }
+
+    /**
+     * 
+     * @param {IDataEmitter|string} emitter
+     * @return {Promise<void>} 
+     */
+    removeEmitter(emitter: IDataEmitter|string): Promise<void> {
+        const key = this.getKey(emitter);
+        if(this._emitters.has(key)) { 
+            if(this._disposeOnRemove) {
+                (this._emitters.get(key) as unknown as IDisposable).dispose();
+            }
+            this._emitters.delete(key);
+        }
+        return Promise.resolve();
+    }
+
+    /**
+     * 
+     * @param {IChronicler|IChroniclerDescription} chronicler 
+     */
+    async addChronicler(chronicler: IChronicler|IChroniclerDescription): Promise<void> {
         const key = chronicler.id.toLowerCase();
+        this.log(LogLevel.INFO, `Adding chronicler ${key}`);
         if(this._chroniclers.has(key)){
             // TODO: think about if we should be responsible for cleaning up of an chronicler in this case
             this.log(LogLevel.WARN, `Replacing ${key} in chronicler map `);
         }
-        this._chroniclers.set(key, chronicler);    
+        const isChronicler = hasMethod(chronicler, 'dispose');
+        this._chroniclers.set(key, isChronicler ? chronicler as IChronicler : await ProviderSingleton.getInstance().buildChronicler(chronicler as IChroniclerDescription));    
     }
 
 
     /**
      * 
-     * @param {IChronicler} chronicler 
+     * @param {IChronicler|string} chronicler
+     * @return {Promise<void>}
      */
-    removeChronicler(chronicler: IChronicler): void {
-        const key = chronicler.id.toLowerCase();
-        if(this._chroniclers.has(key))
+    async removeChronicler(chronicler: IChronicler|string): Promise<void> {
+        const key = this.getKey(chronicler);
+        if(this._chroniclers.has(key)) {
+            if(this._disposeOnRemove) {
+                await this.cleanUpIfDisposable(this._chroniclers.get(key));
+            }
             this._chroniclers.delete(key);
+        }
+        return Promise.resolve();
     }
     
 
