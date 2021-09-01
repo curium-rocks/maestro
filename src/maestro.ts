@@ -212,8 +212,21 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         await this.cleanUpResources();
     }
 
-
-    // TODO: split into smaller functions
+    /**
+     * 
+     * @param {IDisposable[]} toDispose 
+     * @return {IDisposable}
+     */
+    private wrapDisposables(toDispose: IDisposable[]) : IDisposable {
+        const returnDisposable = {
+            dispose: () => {
+                toDispose.forEach((d) => d.dispose);
+                this._disposables.delete(returnDisposable);
+            }
+        }
+        return returnDisposable;
+    }
+    
     /**
      * 
      * @param {IDataEmitter|Iterable<IDataEmitter>} emitters 
@@ -233,12 +246,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
                 })
             }).reduce((prev, cur) => prev.concat(cur));
 
-            const returnDisposable = {
-                dispose: () => {
-                    disposables.forEach((d) => d.dispose);
-                    this._disposables.delete(returnDisposable);
-                }
-            }
+            const returnDisposable = this.wrapDisposables(disposables);
             this._disposables.add(returnDisposable);
             return returnDisposable;
 
@@ -246,30 +254,16 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
             const chronicler = chroniclers as IChronicler;
             const emitterSet = emitters as Iterable<IDataEmitter>;
             const disposables = Array.from(emitterSet).map( (emitter) => emitter.onData(chronicler.saveRecord));
-            const returnDisposables = {
-                dispose: () => {
-                    disposables.forEach( (d) => {
-                        d.dispose();
-                    });
-                    this._disposables.delete(returnDisposables);
-                }
-            }
-            this._disposables.add(returnDisposables);
-            return returnDisposables;
+            const returnDisposable = this.wrapDisposables(disposables);
+            this._disposables.add(returnDisposable);
+            return returnDisposable;
         } else if(!multipleEmitters && multipleChroniclers) {
             const emitter = emitters as IDataEmitter;
             const chroncilerSet = chroniclers as Iterable<IChronicler>;
             const disposables = Array.from(chroncilerSet).map( (chron) => emitter.onData(chron.saveRecord));
-            const disposable = {
-                dispose: () => {
-                    disposables.forEach(d => {
-                        d.dispose();
-                    });
-                    this._disposables.delete(disposable);
-                }
-            }
-            this._disposables.add(disposable);
-            return disposable;
+            const returnDisposable = this.wrapDisposables(disposables);
+            this._disposables.add(returnDisposable);
+            return returnDisposable;
         } else {
             const disposable = (emitters as IDataEmitter).onData((chroniclers as IChronicler).saveRecord);
             const returnDisposable = {
@@ -344,9 +338,6 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      * @param {IMaestroConfig} maestroConfig 
      */
     private async applyConfiguration(maestroConfig: IMaestroConfig) : Promise<void> {
-        // clear out the emitters
-        // clear out the chroniclers
-        // clean up
 
         // load factories
         this.registerFactories(maestroConfig.factories);
@@ -506,8 +497,16 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
         this.log(LogLevel.INFO, `Adding emitter ${key}`);
         if(this._emitters.has(key)){
-            // TODO: think about if we should be responsible for cleaning up of an emitter in this case
             this.log(LogLevel.WARN, `Replacing ${key} in emitter map `);
+            if(this._disposeOnRemove) {
+                const e = this._emitters.get(key);
+                if(isDisposable(e)) {
+                    (e as unknown as IDisposable).dispose();
+                } 
+                if(isDisposableAsync(e)) {
+                    await (e as unknown as IDisposableAsync).disposeAsync();
+                }
+            }
         }
         this._emitters.set(key, isEmitter ? emitter as IDataEmitter : await ProviderSingleton.getInstance().buildEmitter(emitter as IEmitterDescription));
     }
@@ -545,8 +544,10 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         const key = chronicler.id.toLowerCase();
         this.log(LogLevel.INFO, `Adding chronicler ${key}`);
         if(this._chroniclers.has(key)){
-            // TODO: think about if we should be responsible for cleaning up of an chronicler in this case
             this.log(LogLevel.WARN, `Replacing ${key} in chronicler map `);
+            if(this._disposeOnRemove) {
+                this._chroniclers.get(key)?.dispose();
+            }
         }
         const isChronicler = hasMethod(chronicler, 'dispose');
         this._chroniclers.set(key, isChronicler ? chronicler as IChronicler : await ProviderSingleton.getInstance().buildChronicler(chronicler as IChroniclerDescription));    

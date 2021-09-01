@@ -259,5 +259,20 @@ describe( 'Maestro', function() {
             }
             await maestro.disposeAsync();     
         });
+        it( 'Should connect multiple emitters to a single chronicler', async function() {
+            const maestro: IMaestro = new Maestro(DEFAULT_OPTIONS);
+            await maestro.load();
+            const dupEmitters = Array.from(maestro.emitters).concat(Array.from(maestro.emitters));
+            const dupChroniclers = Array.from(maestro.chroniclers).concat(Array.from(maestro.chroniclers));
+            maestro.connect(dupEmitters, dupChroniclers);
+            await maestro.disposeAsync();  
+        });
+        it( 'Should connect multiple emitters to multiple chroniclers', async function() {
+            const maestro: IMaestro = new Maestro(DEFAULT_OPTIONS);
+            await maestro.load();
+            const dupEmitters = Array.from(maestro.emitters).concat(Array.from(maestro.emitters));
+            maestro.connect(dupEmitters, Array.from(maestro.chroniclers)[0]);
+            await maestro.disposeAsync();  
+        });
     })
 });
