@@ -437,22 +437,25 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     }
 
     /**
+     * 
+     * @param {IDataEmitter|IChronicler} obj 
+     * @return {Promise<IEmitterConfig|IChroniclerConfig>}
+     */
+    private async createConfig(obj: IDataEmitter|IChronicler) : Promise<IEmitterConfig|IChroniclerConfig> {
+        return {
+            formatSettings: this._config.formatSettings,
+            config: await obj.serializeState(this._config.formatSettings)
+        }
+    }
+
+    /**
      * @return {Promise<IMaestroConfig>}
      */
     private async buildConfigObj(): Promise<IMaestroConfig> {
-        const emitterConfigurations: IEmitterConfig[] = await Promise.all(Array.from(this._emitters).map(async (kvp)=>{
-            return {
-                formatSettings: this._config.formatSettings,
-                config: await kvp[1].serializeState(this._config.formatSettings)
-            }
-        }));
-
-        const chroniclerConfigurations: IChroniclerConfig[] = await Promise.all(Array.from(this._chroniclers).map(async (kvp)=>{
-            return {
-                formatSettings: this._config.formatSettings,
-                config: await kvp[1].serializeState(this._config.formatSettings)
-            }
-        }))
+        const emitterConfigurations: IEmitterConfig[] = 
+            (await Promise.all(Array.from(this._emitters.values()).map(this.createConfig))) as IEmitterConfig[];
+        const chroniclerConfigurations: IChroniclerConfig[] = 
+            (await Promise.all(Array.from(this._chroniclers.values()).map(this.createConfig))) as IChroniclerConfig[];
 
         return {
             factories: this._config.factories,
