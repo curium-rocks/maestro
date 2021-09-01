@@ -1,6 +1,6 @@
 import { describe, it} from 'mocha';
 import { expect } from 'chai';
-import {IChroniclerConfig, IMaestroConfig, IMeastroOptions, Maestro} from '../src/index';
+import {IChroniclerConfig, IEmitterConfig, IMaestroConfig, IMeastroOptions, Maestro} from '../src/index';
 import fs from 'fs/promises';
 import path from 'path';
 import { PingPongEmitter } from '@curium.rocks/ping-pong-emitter';
@@ -223,6 +223,12 @@ describe( 'Maestro', function() {
             await maestro.addEmitter(DEFAULT_CONFIG.emitters[0].config as IEmitterDescription);
             await maestro.disposeAsync();
         });
+        it( 'Should clean up on overwrite', async function() {
+            const maestro: IMaestro = new Maestro(DEFAULT_OPTIONS);
+            await maestro.addEmitter(DEFAULT_CONFIG.emitters[0].config as IEmitterDescription);
+            await maestro.addEmitter(DEFAULT_CONFIG.emitters[0].config as IEmitterDescription);
+            await maestro.disposeAsync(); 
+        });
     });
     describe( 'removeEmitter()', function() {
         it( 'Should remove a emitter from the set of managed emitters', async function() {
@@ -237,6 +243,12 @@ describe( 'Maestro', function() {
             const maestro: IMaestro = new Maestro(DEFAULT_OPTIONS);
             await maestro.addChronicler(DEFAULT_CONFIG.chroniclers[0].config as IChroniclerDescription);
             await maestro.disposeAsync();        
+        });
+        it( 'Should cleanup resources on overwites ', async function() {
+            const maestro: IMaestro = new Maestro(DEFAULT_OPTIONS);
+            await maestro.addChronicler(DEFAULT_CONFIG.chroniclers[0].config as IChroniclerDescription);
+            await maestro.addChronicler(DEFAULT_CONFIG.chroniclers[0].config as IChroniclerDescription);
+            await maestro.disposeAsync(); 
         });
     });
     describe( 'removeChronicler()', function() {
@@ -274,5 +286,12 @@ describe( 'Maestro', function() {
             maestro.connect(dupEmitters, Array.from(maestro.chroniclers)[0]);
             await maestro.disposeAsync();  
         });
+        it( 'Shoud connect a single emitter to multiple chroniclers', async function() {
+            const maestro: IMaestro = new Maestro(DEFAULT_OPTIONS);
+            await maestro.load();
+            const dupChroniclers = Array.from(maestro.chroniclers).concat(Array.from(maestro.chroniclers));
+            maestro.connect(Array.from(maestro.emitters)[0], dupChroniclers);
+            await maestro.disposeAsync();  
+        })
     })
 });
