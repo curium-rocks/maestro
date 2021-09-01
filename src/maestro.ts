@@ -322,7 +322,10 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
         const promises = resources.map((d) => {
             return this.cleanUpIfDisposable(d);
-        });
+        }).concat(resources.map((r) => {
+            return this.stopIfStoppable(r);
+        }));
+        
         const unifiedPromise = Promise.all(promises);
         await unifiedPromise;
 
