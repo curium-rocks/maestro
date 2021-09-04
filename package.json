@@ -21,7 +21,9 @@
     "Maestro",
     "typescript",
     "node.js",
-    "eslint"
+    "eslint",
+    "iot",
+    "event-driven"
   ],
   "devDependencies": {
     "@curium.rocks/json-chronicler": "^0.1.1-6",
