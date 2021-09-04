@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import fsProm from 'fs/promises';
 import crypto from 'crypto';
+import { IConnection } from '.';
 
 /**
  * 
@@ -236,15 +237,16 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     connect(emitters: IDataEmitter | Iterable<IDataEmitter>, chroniclers: IChronicler | Iterable<IChronicler>): IDisposable {
         const multipleEmitters = isIterable(emitters);
         const multipleChroniclers = isIterable(chroniclers);
+
         if(multipleChroniclers && multipleEmitters) {
             const chroniclerSet = chroniclers as Iterable<IChronicler>;
             const emitterSet = emitters as Iterable<IDataEmitter>;
 
             const disposables = Array.from(emitterSet).map( (emitter) => {
                 return Array.from(chroniclerSet).map( (chroncicler) => {
-                    return emitter.onData(chroncicler.saveRecord);
+                    return emitter.onData(chroncicler.saveRecord.bind(chroncicler));
                 })
-            }).reduce((prev, cur) => prev.concat(cur));
+            }).reduce((prev, cur) => prev.concat(cur), []);
 
             const returnDisposable = this.wrapDisposables(disposables);
             this._disposables.add(returnDisposable);
@@ -253,19 +255,19 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         } else if(multipleEmitters && !multipleChroniclers) {
             const chronicler = chroniclers as IChronicler;
             const emitterSet = emitters as Iterable<IDataEmitter>;
-            const disposables = Array.from(emitterSet).map( (emitter) => emitter.onData(chronicler.saveRecord));
+            const disposables = Array.from(emitterSet).map( (emitter) => emitter.onData(chronicler.saveRecord.bind(chronicler)));
             const returnDisposable = this.wrapDisposables(disposables);
             this._disposables.add(returnDisposable);
             return returnDisposable;
         } else if(!multipleEmitters && multipleChroniclers) {
             const emitter = emitters as IDataEmitter;
             const chroncilerSet = chroniclers as Iterable<IChronicler>;
-            const disposables = Array.from(chroncilerSet).map( (chron) => emitter.onData(chron.saveRecord));
+            const disposables = Array.from(chroncilerSet).map( (chron) => emitter.onData(chron.saveRecord.bind(chron)));
             const returnDisposable = this.wrapDisposables(disposables);
             this._disposables.add(returnDisposable);
             return returnDisposable;
         } else {
-            const disposable = (emitters as IDataEmitter).onData((chroniclers as IChronicler).saveRecord);
+            const disposable = (emitters as IDataEmitter).onData((chroniclers as IChronicler).saveRecord.bind(chroniclers));
             const returnDisposable = {
                 dispose: () => {
                     disposable.dispose();
@@ -325,7 +327,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         }).concat(resources.map((r) => {
             return this.stopIfStoppable(r);
         }));
-        
+
         const unifiedPromise = Promise.all(promises);
         await unifiedPromise;
 
@@ -350,7 +352,31 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
         // create chroniclers
         await this.createChroniclers(maestroConfig.chroniclers);
+
+        // establish connections
+        await this.createConnections(maestroConfig.connections);
+        
         this._config = maestroConfig;
+    }
+
+    /**
+     * 
+     * @param {IConnections[]} connections
+     * @return {Promise<void>} 
+     */
+    private async createConnections(connections: IConnection[]) {
+        if(!connections || connections.length == 0) {
+            return Promise.resolve();
+        }
+        connections.forEach((iConn) => {
+            const emitters: Array<IDataEmitter> = iConn.emitters.map((emitterId) => this._emitters.get(emitterId.toLowerCase()))
+                .filter((item) => item != null)
+                .map((item) => item as IDataEmitter);
+            const chroniclers: Array<IChronicler> = iConn.chroniclers.map((chronId) => this._chroniclers.get(chronId.toLowerCase()))
+                .filter((item) => item != null)
+                .map((item) => item as IChronicler);
+            this.connect(emitters, chroniclers);
+        })
     }
 
     /**
@@ -456,9 +482,9 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      */
     private async buildConfigObj(): Promise<IMaestroConfig> {
         const emitterConfigurations: IEmitterConfig[] = 
-            (await Promise.all(Array.from(this._emitters.values()).map(this.createConfig))) as IEmitterConfig[];
+            (await Promise.all(Array.from(this._emitters.values()).map(this.createConfig.bind(this)))) as IEmitterConfig[];
         const chroniclerConfigurations: IChroniclerConfig[] = 
-            (await Promise.all(Array.from(this._chroniclers.values()).map(this.createConfig))) as IChroniclerConfig[];
+            (await Promise.all(Array.from(this._chroniclers.values()).map(this.createConfig.bind(this)))) as IChroniclerConfig[];
 
         return {
             factories: this._config.factories,
