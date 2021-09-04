@@ -27,7 +27,7 @@ export interface IMaestroLoadHandler {
     (): Promise<IMaestroConfig>;
 }
 
-export interface IMeastroOptions {
+export interface IMaestroOptions {
     logger?: LoggerFacade,
     disposeOnRemove?: boolean;
     config: IMaestroConfig | string,
@@ -91,7 +91,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      * 
      * @param {IMaestroOptions} options 
      */
-    constructor(options: IMeastroOptions) {
+    constructor(options: IMaestroOptions) {
         this._logger = options.logger;
         this.log(LogLevel.DEBUG, "creating maestro");
         this._disposeOnRemove = options.disposeOnRemove || true;

@@ -1,2 +1,2 @@
-export {Maestro, IMaestroLoadHandler, IMaestroSaveHandler, IMeastroOptions, isIterable} from './maestro';
+export {Maestro, IMaestroLoadHandler, IMaestroSaveHandler, IMaestroOptions, isIterable} from './maestro';
 export {IMaestroConfig, IChroniclerConfig, IEmitterConfig, IFactoryConfig, IFactoryMap, IConnection} from './meastroConfig'

@@ -1,6 +1,6 @@
 import { describe, it} from 'mocha';
 import { expect } from 'chai';
-import { IMaestroConfig, IMeastroOptions, Maestro} from '../src/index';
+import { IMaestroConfig, IMaestroOptions, Maestro} from '../src/index';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -102,7 +102,7 @@ function getDefaultConfig(logDir?: string, logName?: string): IMaestroConfig {
  * @param {string|undefined} logName
  * @return {IMaestroOptions}
  */
-function getDefaultOptions(logDir?:string, logName?:string) : IMeastroOptions {
+function getDefaultOptions(logDir?:string, logName?:string) : IMaestroOptions {
     return {
         config: getDefaultConfig(logDir, logName),
         logger: getLoggerFacade('default-opts'),
