@@ -1,7 +1,11 @@
 node_modules
 build
+test-config
 .nyc_output
 coverage
 .idea
 docs
 .DS_Store
+.vscode
+*.log
+test-log-dir
