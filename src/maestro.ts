@@ -235,6 +235,8 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      * @return {IDisposable}
      */
     private attachEmitterToChronicler(emitter: IDataEmitter, chronicler: IChronicler): IDisposable {
+        if(emitter == null) throw new Error("Null emitter cannot be attached");
+        if(chronicler == null) throw new Error("Null chronicler cannot be attached");
         const dataConnection = emitter.onData(chronicler.saveRecord.bind(chronicler));
         const statusConnection = emitter.onStatus(chronicler.saveRecord.bind(chronicler));
 
@@ -260,8 +262,8 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
             const chroniclerSet = chroniclers as Iterable<IChronicler>;
             const emitterSet = emitters as Iterable<IDataEmitter>;
 
-            const disposables = Array.from(emitterSet).map( (emitter) => {
-                return Array.from(chroniclerSet).map( (chroncicler) => {
+            const disposables = Array.from(emitterSet).filter((emitter) => emitter != null).map( (emitter) => {
+                return Array.from(chroniclerSet).filter((chronicler) => chronicler != null).map( (chroncicler) => {
                     return this.attachEmitterToChronicler(emitter, chroncicler);
                 })
             }).reduce((prev, cur) => prev.concat(cur), []);
@@ -305,6 +307,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
      */
     private cleanUpIfDisposable(obj: unknown) : Promise<void> {
         if(isDisposableAsync(obj)) {
+            this.log(LogLevel.DEBUG, "disposing async")
             return (obj as IDisposableAsync).disposeAsync();
         } else if(isDisposable(obj)) {
             this.log(LogLevel.DEBUG, "disposing object");
@@ -596,10 +599,10 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         if(this._chroniclers.has(key)){
             this.log(LogLevel.WARN, `Replacing ${key} in chronicler map `);
             if(this._disposeOnRemove) {
-                this._chroniclers.get(key)?.dispose();
+                await this._chroniclers.get(key)?.disposeAsync();
             }
         }
-        const isChronicler = hasMethod(chronicler, 'dispose');
+        const isChronicler = hasMethod(chronicler, 'disposeAsync');
         this._chroniclers.set(key, isChronicler ? chronicler as IChronicler : await ProviderSingleton.getInstance().buildChronicler(chronicler as IChroniclerDescription));    
     }
 
