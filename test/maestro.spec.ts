@@ -8,6 +8,9 @@ import { PingPongEmitter } from '@curium.rocks/ping-pong-emitter';
 import { JsonChronicler } from '@curium.rocks/json-chronicler';
 import {IChroniclerDescription, IDisposableAsync, IEmitterDescription, IMaestro, LoggerFacade} from '@curium.rocks/data-emitter-base';
 import winston from 'winston';
+import { TestChronicler } from './helpers/testChronicler';
+import { TestEmitter } from './helpers/testEmitter';
+import { emit } from 'process';
 
 
 /**
@@ -107,7 +110,43 @@ function getDefaultOptions(logDir?:string, logName?:string) : IMaestroOptions {
         config: getDefaultConfig(logDir, logName),
         logger: getLoggerFacade('default-opts'),
         loadHandler: () => {
-            return Promise.resolve(getDefaultConfig());
+            return Promise.resolve(getDefaultConfig(logDir, logName));
+        }
+    }
+}
+/**
+ * 
+ * @return {IMaestroConfig}
+ */
+function getEmptyConfig(): IMaestroConfig {
+    return {
+        chroniclers: [],
+        emitters: [],
+        factories: {
+            emitter: [],
+            chronicler: []
+        },
+        connections: [],
+        id: 'empty-maestro-id',
+        name: 'empty-maestro-name',
+        description: 'empty-maestro-config',
+        formatSettings: {
+            encrypted: false,
+            type: 'N/A'
+        }
+    }
+}
+
+/**
+ * 
+ * @return {IMaestroOptions} 
+ */
+function getEmptyOptions() : IMaestroOptions {
+    return {
+        config: getEmptyConfig(),
+        logger: getLoggerFacade('empty-opts'),
+        loadHandler: () => {
+            return Promise.resolve(getEmptyConfig())
         }
     }
 }
@@ -148,7 +187,7 @@ describe( 'Maestro', function() {
                 expect(maestro.name).to.be.eq(config.name);
                 expect(maestro.description).to.be.eq(config.description);
             } finally {
-                if (maestro != null) await (maestro as unknown as IDisposableAsync).disposeAsync();
+                await maestro?.disposeAsync();
             }
         });
         it( 'Should restore from a handler', async function() {
@@ -330,17 +369,20 @@ describe( 'Maestro', function() {
             const mOptions = getDefaultOptions();
             const mConfig = getDefaultConfig();
             const maestro: IMaestro = new Maestro(mOptions);
-            await maestro.start();            
+            try {
+                await maestro.start();            
 
-            // create a new emitter id 
-            const newChronDesc = mConfig.chroniclers[0].config as IChroniclerDescription;
-            newChronDesc.id = 'test-test-test';
+                // create a new emitter id 
+                const newChronDesc = mConfig.chroniclers[0].config as IChroniclerDescription;
+                newChronDesc.id = 'test-test-test';
 
-            await maestro.addChronicler(newChronDesc);
-            expect(Array.from(maestro.chroniclers).length).to.eq(2);
-            await maestro.removeChronicler(newChronDesc.id);
-            expect(Array.from(maestro.chroniclers).length).to.eq(1);
-            await maestro.disposeAsync();        
+                await maestro.addChronicler(newChronDesc);
+                expect(Array.from(maestro.chroniclers).length).to.eq(2);
+                await maestro.removeChronicler(newChronDesc.id);
+                expect(Array.from(maestro.chroniclers).length).to.eq(1);
+            } finally {
+                await maestro.disposeAsync();        
+            }
         });
         it( 'Should cleanup resources on overwites ', async function() {
             const mOptions = getDefaultOptions();
@@ -390,11 +432,15 @@ describe( 'Maestro', function() {
         });
         it( 'Should connect multiple emitters to multiple chroniclers', async function() {
             const mOptions = getDefaultOptions();
-            const maestro = new Maestro(mOptions);
-            await maestro.start();
-            const dupEmitters = Array.from(maestro.emitters).concat(Array.from(maestro.emitters));
-            maestro.connect(dupEmitters, Array.from(maestro.chroniclers)[0]);
-            await maestro.disposeAsync();  
+            let maestro:IMaestro|undefined;
+            try {
+                maestro = new Maestro(mOptions);
+                await maestro.start();
+                const dupEmitters = Array.from(maestro.emitters).concat(Array.from(maestro.emitters));
+                maestro.connect(dupEmitters, Array.from(maestro.chroniclers)[0]);
+            } finally {
+                await maestro?.disposeAsync();
+            }
         });
         it( 'Shoud connect a single emitter to multiple chroniclers', async function() {
             const mOptions = getDefaultOptions();
@@ -415,23 +461,46 @@ describe( 'Maestro', function() {
             options.loadHandler = () => {
                 return Promise.resolve(getDefaultConfig('./test-log-dir/behavior-test', logName))
             }
-            const maestro:IMaestro = new Maestro(options);
+            let maestro:IMaestro|undefined;
             
-            // start
-            await maestro.start();
-            await sleep(7500);
-            await maestro.disposeAsync();
-            await sleep(250);
+            try {
+                maestro  = new Maestro(options);
+                // start
+                await maestro.start();
+                await sleep(7500);
+                await maestro.disposeAsync();
+                await sleep(250);
 
-            // check the log files and assert
-            const files = (await fs.readdir('./test-log-dir/behavior-test')).filter(fn => fn.startsWith(logName));
-            expect(files.length).to.eq(1);
+                // check the log files and assert
+                const files = (await fs.readdir('./test-log-dir/behavior-test')).filter(fn => fn.startsWith(logName));
+                expect(files.length).to.eq(1);
 
-            const data : unknown[] = JSON.parse(await fs.readFile(`./test-log-dir/behavior-test/${files[0]}`, {
-                encoding: 'utf-8'
-            }));
-            expect((data.length)).to.be.greaterThan(0);
+                const data : unknown[] = JSON.parse(await fs.readFile(`./test-log-dir/behavior-test/${files[0]}`, {
+                    encoding: 'utf-8'
+                }));
+                expect((data.length)).to.be.greaterThan(0);
+            } finally{
+                await maestro?.disposeAsync();
+            }
+        });
+        it('Should cleanup resources', async function() {
+            let maestro: IMaestro|undefined;
+            try {
+                maestro = new Maestro(getEmptyOptions());
+                const chrony = new TestChronicler();
+                const emitty = new TestEmitter();
+                maestro.addChronicler(chrony);
+                maestro.addEmitter(emitty);
 
-        })
+                expect(Array.from(maestro.chroniclers).length).to.be.eq(1, 'should have added chronicler');
+                expect(Array.from(maestro.emitters).length).to.be.eq(1, 'should have added emitter');
+                await maestro.disposeAsync();
+                expect(chrony.disposeCallCount).to.be.eq(1, 'should have cleaned up chronicler');
+                expect(emitty.disposeCallCount).to.be.eq(1, 'should have cleaned up emitter');
+
+            } finally {
+                await maestro?.disposeAsync();
+            }
+        });
     });
 });
