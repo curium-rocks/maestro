@@ -230,6 +230,24 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
     
     /**
      * 
+     * @param {IDataEmitter} emitter 
+     * @param {IChronicler} chronicler 
+     * @return {IDisposable}
+     */
+    private attachEmitterToChronicler(emitter: IDataEmitter, chronicler: IChronicler): IDisposable {
+        const dataConnection = emitter.onData(chronicler.saveRecord.bind(chronicler));
+        const statusConnection = emitter.onStatus(chronicler.saveRecord.bind(chronicler));
+
+        return {
+            dispose: () => {
+                dataConnection.dispose();
+                statusConnection.dispose();
+            }
+        }
+    }
+
+    /**
+     * 
      * @param {IDataEmitter|Iterable<IDataEmitter>} emitters 
      * @param {IChronicler|Iterable<IChronicler>} chroniclers 
      * @return {IDisposable}
@@ -244,7 +262,7 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
 
             const disposables = Array.from(emitterSet).map( (emitter) => {
                 return Array.from(chroniclerSet).map( (chroncicler) => {
-                    return emitter.onData(chroncicler.saveRecord.bind(chroncicler));
+                    return this.attachEmitterToChronicler(emitter, chroncicler);
                 })
             }).reduce((prev, cur) => prev.concat(cur), []);
 
@@ -255,19 +273,19 @@ export class Maestro implements IMaestro, IService, IDisposableAsync, IClassifie
         } else if(multipleEmitters && !multipleChroniclers) {
             const chronicler = chroniclers as IChronicler;
             const emitterSet = emitters as Iterable<IDataEmitter>;
-            const disposables = Array.from(emitterSet).map( (emitter) => emitter.onData(chronicler.saveRecord.bind(chronicler)));
+            const disposables = Array.from(emitterSet).map( (emitter) => this.attachEmitterToChronicler(emitter, chronicler));
             const returnDisposable = this.wrapDisposables(disposables);
             this._disposables.add(returnDisposable);
             return returnDisposable;
         } else if(!multipleEmitters && multipleChroniclers) {
             const emitter = emitters as IDataEmitter;
             const chroncilerSet = chroniclers as Iterable<IChronicler>;
-            const disposables = Array.from(chroncilerSet).map( (chron) => emitter.onData(chron.saveRecord.bind(chron)));
+            const disposables = Array.from(chroncilerSet).map( (chron) => this.attachEmitterToChronicler(emitter, chron));
             const returnDisposable = this.wrapDisposables(disposables);
             this._disposables.add(returnDisposable);
             return returnDisposable;
         } else {
-            const disposable = (emitters as IDataEmitter).onData((chroniclers as IChronicler).saveRecord.bind(chroniclers));
+            const disposable = this.attachEmitterToChronicler(emitters as IDataEmitter, chroniclers as IChronicler);
             const returnDisposable = {
                 dispose: () => {
                     disposable.dispose();
