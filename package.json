@@ -1,6 +1,6 @@
 {
   "name": "maestro",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Connects emitters to chroniclers and transceivers along with managing state of emitters",
   "main": "build/src/index.js",
   "scripts": {
