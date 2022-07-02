@@ -7,5 +7,6 @@
       "matchPaths": ["+(package.json)"],
       "automerge": true
     }
-  ]
+  ],
+  "automerge": true
 }
