@@ -1,6 +1,6 @@
 {
   "name": "@curium.rocks/maestro",
-  "version": "0.1.1-2",
+  "version": "0.1.1-3",
   "description": "Connects emitters to chroniclers and transceivers along with managing state of emitters",
   "main": "build/src/index.js",
   "scripts": {
